@@ -60,14 +60,15 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     }
     else
         PUB_THIS_FRAME = false;
-
+    //Opencv 和 ROS中对image数据的相互转换数据:通过cv_bridge::CvImage
     cv_bridge::CvImageConstPtr ptr;
-    if (img_msg->encoding == "8UC1")
+    if (img_msg->encoding == "8UC1")    //8UC1：8位无符号1（单）通道，opencv中图像编码，即8位的灰度图
     {
         sensor_msgs::Image img;
         img.header = img_msg->header;
         img.height = img_msg->height;
         img.width = img_msg->width;
+        //大端
         img.is_bigendian = img_msg->is_bigendian;
         img.step = img_msg->step;
         img.data = img_msg->data;
@@ -76,13 +77,15 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     }
     else
         ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
-
+    
+    //openCV中的image数据结构
     cv::Mat show_img = ptr->image;
     TicToc t_r;
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         ROS_DEBUG("processing camera %d", i);
         if (i != 1 || !STEREO_TRACK)
+            //读入0-ROW行的图像数据
             trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)), img_msg->header.stamp.toSec());
         else
         {
@@ -94,7 +97,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             else
                 trackerData[i].cur_img = ptr->image.rowRange(ROW * i, ROW * (i + 1));
         }
-
+//显示去畸变后的图像
 #if SHOW_UNDISTORTION
         trackerData[i].showUndistortion("undistrotion_" + std::to_string(i));
 #endif
@@ -105,6 +108,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         bool completed = false;
         for (int j = 0; j < NUM_OF_CAM; j++)
             if (j != 1 || !STEREO_TRACK)
+                //更新特征点的对应关系
                 completed |= trackerData[j].updateID(i);
         if (!completed)
             break;
@@ -166,18 +170,23 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
         if (SHOW_TRACK)
         {
+            //转换为BGR彩色图
             ptr = cv_bridge::cvtColor(ptr, sensor_msgs::image_encodings::BGR8);
             //cv::Mat stereo_img(ROW * NUM_OF_CAM, COL, CV_8UC3);
             cv::Mat stereo_img = ptr->image;
 
             for (int i = 0; i < NUM_OF_CAM; i++)
             {
+                //取0-ROW行的图像数据
                 cv::Mat tmp_img = stereo_img.rowRange(i * ROW, (i + 1) * ROW);
+                //转换RBG彩色图
                 cv::cvtColor(show_img, tmp_img, CV_GRAY2RGB);
 
                 for (unsigned int j = 0; j < trackerData[i].cur_pts.size(); j++)
                 {
                     double len = std::min(1.0, 1.0 * trackerData[i].track_cnt[j] / WINDOW_SIZE);
+                    //以特征点为中心画圆圈：
+                    //cvCircle(CvArr* img, CvPoint center, int radius, CvScalar color, int thickness=1, int lineType=8, int shift=0)
                     cv::circle(tmp_img, trackerData[i].cur_pts[j], 2, cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
                     //draw speed line
                     /*
@@ -197,7 +206,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             }
             //cv::imshow("vis", stereo_img);
             //cv::waitKey(5);
-            pub_match.publish(ptr->toImageMsg());
+            pub_match.publish(ptr->toImageMsg());   //cv_bridge中image转换成ROS中image
         }
     }
     ROS_INFO("whole feature tracker processing costs: %f", t_r.toc());
