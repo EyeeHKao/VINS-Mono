@@ -13,12 +13,12 @@
 
 vector<uchar> r_status;
 vector<float> r_err;
-queue<sensor_msgs::ImageConstPtr> img_buf;
+queue<sensor_msgs::ImageConstPtr> img_buf;  ///未使用到
 
 ros::Publisher pub_img,pub_match;
 ros::Publisher pub_restart;
 
-FeatureTracker trackerData[NUM_OF_CAM];
+FeatureTracker trackerData[NUM_OF_CAM];    ///NUM_OF_CAM相机数目 
 double first_image_time;
 int pub_count = 1;
 bool first_image_flag = true;
