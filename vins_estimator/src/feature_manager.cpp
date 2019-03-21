@@ -41,7 +41,9 @@ int FeatureManager::getFeatureCount()
     return cnt;
 }
 
-
+/*通过特征管理器管理每帧image数据的特征点，并计算符合条件的公视点的视差，
+  最初两帧（0，1）或者追踪上的点少于20或者没有符合条件的公视点”,或者视差足够>=MIN,则返回true,说明可以当作关键帧，快追踪没了，所以很关键啊
+*/
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
     ROS_DEBUG("input feature: %d", (int)image.size());
@@ -49,6 +51,9 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     double parallax_sum = 0;
     int parallax_num = 0;
     last_track_num = 0;
+    //对每个特征点，查询特征管理器中是否有该点，如果没有，加入该点以及对该点在此帧的描述，若有，则只更新该点的在次帧描述，并将跟踪次数加1：
+    //所谓在此帧的描述，是指该特征点被哪些帧看到过，用FeaturePerFrame类抽象表述了，主要有归一化坐标，像素点，光流等
+    //这里可以做一步优化：对于第0帧，此时管理中没有任何特征点，可以直接插入这帧，跳过每次去搜索的过程：
     for (auto &id_pts : image)
     {
         FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
@@ -70,12 +75,19 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
             last_track_num++;
         }
     }
-
+    //最初两帧（0，1）或者追踪上的点数小于20，这两种情况下都返回true,当作关键帧：
     if (frame_count < 2 || last_track_num < 20)
         return true;
 
+    //对每个被共视的特征点，计算视差，注意到这里，至少frame_count = 3了：
     for (auto &it_per_id : feature)
     {
+     
+        //这里不太理解：如果一个特征点在第0帧第一次被看到，则start_frame=0,然后又在第3帧被看到，那这个if中第二项就是2了，代表什么意义呢？
+        //代码的意思应该是想算出它最后被看到时的帧号：
+        //通过分析进一步分析，应该是只去计算一些这样的特征点的视差：它在start_frame被初次看到，并要求这帧在次新帧之前（<=frame_count-2），
+        //而保守估计的它最后一次被看到的那帧(因为实际上最后被看到的帧号肯定大于等这个值的)又必须同时大于等于次新帧(>=frame_count-1)，
+        //那么符合这种条件的特征点的一个特点就是，它是一个较早前（次新帧前）被看到的，如果一直被追踪到次新帧的话，则算视差，或者,start_frame = frame_count-2,且
         if (it_per_id.start_frame <= frame_count - 2 &&
             it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
@@ -83,7 +95,7 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
             parallax_num++;
         }
     }
-
+    //说明特征管理器中还没有这种特殊的公视点共视点，这种情形下，也返回true,当作关键帧
     if (parallax_num == 0)
     {
         return true;
