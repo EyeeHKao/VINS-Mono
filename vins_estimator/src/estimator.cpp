@@ -121,10 +121,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 {
     ROS_DEBUG("new image coming ------------------------------------------");
     ROS_DEBUG("Adding feature points %lu", image.size());
-    if (f_manager.addFeatureCheckParallax(frame_count, image, td))
-        marginalization_flag = MARGIN_OLD;
+    if (f_manager.addFeatureCheckParallax(frame_count, image, td))  ///根据视差判断是否是关键帧
+        marginalization_flag = MARGIN_OLD;  ///是关键帧，就边缘化最旧帧
     else
-        marginalization_flag = MARGIN_SECOND_NEW;
+        marginalization_flag = MARGIN_SECOND_NEW;  ///否则边缘化次新帧
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
     ROS_DEBUG("%s", marginalization_flag ? "Non-keyframe" : "Keyframe");
@@ -135,11 +135,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ImageFrame imageframe(image, header.stamp.toSec());
     imageframe.pre_integration = tmp_pre_integration;
     all_image_frame.insert(make_pair(header.stamp.toSec(), imageframe));
-    tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
+    tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};///imu预积分
 
-    if(ESTIMATE_EXTRINSIC == 2)
+    if(ESTIMATE_EXTRINSIC == 2) ///需要在线估计外参数，
     {
-        ROS_INFO("calibrating extrinsic param, rotation movement is needed");
+        ROS_INFO("calibrating extrinsic param, rotation movement is needed");  ///需要做旋转
         if (frame_count != 0)
         {
             vector<pair<Vector3d, Vector3d>> corres = f_manager.getCorresponding(frame_count - 1, frame_count);
@@ -150,14 +150,14 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 ROS_WARN_STREAM("initial extrinsic rotation: " << endl << calib_ric);
                 ric[0] = calib_ric;
                 RIC[0] = calib_ric;
-                ESTIMATE_EXTRINSIC = 1;
+                ESTIMATE_EXTRINSIC = 1; ///在线估计出外参数成功后，不再继续估计
             }
         }
     }
 
-    if (solver_flag == INITIAL)
+    if (solver_flag == INITIAL) ///初始化状态时
     {
-        if (frame_count == WINDOW_SIZE)
+        if (frame_count == WINDOW_SIZE) ///直到窗口帧满后再进行初始化，此时总共有WINDOW_SIZE+1帧，窗口里满了，外加当前帧
         {
             bool result = false;
             if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)
@@ -165,11 +165,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                result = initialStructure();
                initial_timestamp = header.stamp.toSec();
             }
-            if(result)
+            if(result)  ///初始化求解成功后
             {
                 solver_flag = NON_LINEAR;
-                solveOdometry();
-                slideWindow();
+                solveOdometry();     ///进行窗口内所有帧非线性优化求解
+                slideWindow();  ///求解完后滑动窗口
                 f_manager.removeFailures();
                 ROS_INFO("Initialization finish!");
                 last_R = Rs[WINDOW_SIZE];
@@ -179,15 +179,15 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 
             }
             else
-                slideWindow();
+                slideWindow();  ///初始化求解失败，则滑动窗口
         }
         else
             frame_count++;
     }
-    else
+    else    ///非线性优化状态，
     {
         TicToc t_solve;
-        solveOdometry();
+        solveOdometry();   ///非线性求解
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
 
         if (failureDetection())
@@ -201,11 +201,11 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         }
 
         TicToc t_margin;
-        slideWindow();
+        slideWindow();  ///求解成功后进行边缘化，保留边缘化信息在窗口中，下次求解可以利用这些信息
         f_manager.removeFailures();
         ROS_DEBUG("marginalization costs: %fms", t_margin.toc());
         // prepare output of VINS
-        key_poses.clear();
+        key_poses.clear();  ///存放滑窗内的帧对应的imu的位置
         for (int i = 0; i <= WINDOW_SIZE; i++)
             key_poses.push_back(Ps[i]);
 
@@ -1005,13 +1005,14 @@ void Estimator::optimization()
 void Estimator::slideWindow()
 {
     TicToc t_margin;
-    if (marginalization_flag == MARGIN_OLD)
+    if (marginalization_flag == MARGIN_OLD) ///边缘化最旧帧策略
     {
-        double t_0 = Headers[0].stamp.toSec();
+        double t_0 = Headers[0].stamp.toSec(); 
         back_R0 = Rs[0];
         back_P0 = Ps[0];
-        if (frame_count == WINDOW_SIZE)
+        if (frame_count == WINDOW_SIZE) ///窗口帧满了才会滑动
         {
+            //对窗口中的帧(包含当前帧)从旧到新进行两两交换，相当于向前滑动窗口，新的帧向后移动，最旧帧被置换到最新的位置
             for (int i = 0; i < WINDOW_SIZE; i++)
             {
                 Rs[i].swap(Rs[i + 1]);
@@ -1028,7 +1029,9 @@ void Estimator::slideWindow()
                 Bas[i].swap(Bas[i + 1]);
                 Bgs[i].swap(Bgs[i + 1]);
             }
-            Headers[WINDOW_SIZE] = Headers[WINDOW_SIZE - 1];
+            //此时WINDOW_SIZE下标存放的是最旧帧的信息，
+            //覆盖为最新帧的信息
+            Headers[WINDOW_SIZE] = Headers[WINDOW_SIZE - 1];    
             Ps[WINDOW_SIZE] = Ps[WINDOW_SIZE - 1];
             Vs[WINDOW_SIZE] = Vs[WINDOW_SIZE - 1];
             Rs[WINDOW_SIZE] = Rs[WINDOW_SIZE - 1];
@@ -1045,17 +1048,17 @@ void Estimator::slideWindow()
             if (true || solver_flag == INITIAL)
             {
                 map<double, ImageFrame>::iterator it_0;
-                it_0 = all_image_frame.find(t_0);
-                delete it_0->second.pre_integration;
+                it_0 = all_image_frame.find(t_0);  ///找到最旧帧，删除最旧帧对应的预积分
+                delete it_0->second.pre_integration;    
                 it_0->second.pre_integration = nullptr;
- 
+                //删除最旧帧之前的所有帧的预积分信息
                 for (map<double, ImageFrame>::iterator it = all_image_frame.begin(); it != it_0; ++it)
                 {
                     if (it->second.pre_integration)
                         delete it->second.pre_integration;
                     it->second.pre_integration = NULL;
                 }
-
+                //删除最旧帧之前的所有ImageFrame    
                 all_image_frame.erase(all_image_frame.begin(), it_0);
                 all_image_frame.erase(t_0);
 
@@ -1063,10 +1066,11 @@ void Estimator::slideWindow()
             slideWindowOld();
         }
     }
-    else
+    else   ///边缘化策略为边缘化次新帧
     {
         if (frame_count == WINDOW_SIZE)
         {
+            //将当前帧(或窗口中最新帧)的预积分信息移动到次新帧
             for (unsigned int i = 0; i < dt_buf[frame_count].size(); i++)
             {
                 double tmp_dt = dt_buf[frame_count][i];
@@ -1079,14 +1083,15 @@ void Estimator::slideWindow()
                 linear_acceleration_buf[frame_count - 1].push_back(tmp_linear_acceleration);
                 angular_velocity_buf[frame_count - 1].push_back(tmp_angular_velocity);
             }
-
+            //最新帧信息给到次新帧
             Headers[frame_count - 1] = Headers[frame_count];
             Ps[frame_count - 1] = Ps[frame_count];
             Vs[frame_count - 1] = Vs[frame_count];
             Rs[frame_count - 1] = Rs[frame_count];
             Bas[frame_count - 1] = Bas[frame_count];
             Bgs[frame_count - 1] = Bgs[frame_count];
-
+            
+            //删除最新帧的预积分
             delete pre_integrations[WINDOW_SIZE];
             pre_integrations[WINDOW_SIZE] = new IntegrationBase{acc_0, gyr_0, Bas[WINDOW_SIZE], Bgs[WINDOW_SIZE]};
 
@@ -1108,7 +1113,7 @@ void Estimator::slideWindowNew()
 // real marginalization is removed in solve_ceres()
 void Estimator::slideWindowOld()
 {
-    sum_of_back++;
+    sum_of_back++;  ///计数
 
     bool shift_depth = solver_flag == NON_LINEAR ? true : false;
     if (shift_depth)
