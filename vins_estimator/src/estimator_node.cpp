@@ -365,11 +365,11 @@ void process()
             header.frame_id = "world";
             //发布消息： 
             pubOdometry(estimator, header); ///发布窗口中最新帧对应的imu系的位姿及路径在漂移的世界坐标系下和校正的世界坐标系下
-            pubKeyPoses(estimator, header); ///发布关键点位置？？？
-            pubCameraPose(estimator, header);///发布次新的相机位姿
+            pubKeyPoses(estimator, header); ///发布窗口中所有imu的位置
+            pubCameraPose(estimator, header);///发布最新的相机位姿
             pubPointCloud(estimator, header);///发布点云及边缘化最旧帧的点云
             pubTF(estimator, header);  ///发布tf坐标变换
-            pubKeyframe(estimator); ///发布次新关键帧
+            pubKeyframe(estimator); ///发布次次新关键帧，目前窗口中的WINDOW_SIZE-2帧
             if (relo_msg != NULL)
                 pubRelocalization(estimator);   ///如果窗口中有重定位帧，发布重定位帧和回环帧的相对位姿
             //ROS_ERROR("end: %f, at %f", img_msg->header.stamp.toSec(), ros::Time::now().toSec());
