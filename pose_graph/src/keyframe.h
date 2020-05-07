@@ -82,7 +82,7 @@ public:
 	Eigen::Vector3d T_w_i;　　　///４dof回环优化后的imu系相当于world系（校正后）的位姿
 	Eigen::Matrix3d R_w_i;
 
-	Eigen::Vector3d origin_vio_T;	///这又是啥玩意啊	
+	Eigen::Vector3d origin_vio_T;	///最初的vio位姿
 	Eigen::Matrix3d origin_vio_R;
 	cv::Mat image;
 	cv::Mat thumbnail;
