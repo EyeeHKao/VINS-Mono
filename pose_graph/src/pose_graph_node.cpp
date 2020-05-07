@@ -131,6 +131,7 @@ void point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
     */
 }
 
+//漂移世界坐标系下，窗口中最新帧对应的imu系的位姿
 void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 {
     //ROS_INFO("pose_callback!");
@@ -177,6 +178,7 @@ void imu_forward_callback(const nav_msgs::Odometry::ConstPtr &forward_msg)
         cameraposevisual.publish_by(pub_camera_pose_visual, forward_msg->header);
     }
 }
+//窗口中重定位帧和回环帧的相对位姿等信息
 void relo_relative_pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 {
     Vector3d relative_t = Vector3d(pose_msg->pose.pose.position.x,
@@ -188,7 +190,7 @@ void relo_relative_pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     relative_q.y() = pose_msg->pose.pose.orientation.y;
     relative_q.z() = pose_msg->pose.pose.orientation.z;
     double relative_yaw = pose_msg->twist.twist.linear.x;
-    int index = pose_msg->twist.twist.linear.y;
+    int index = pose_msg->twist.twist.linear.y; ///回环帧的id
     //printf("receive index %d \n", index );
     Eigen::Matrix<double, 8, 1 > loop_info;
     loop_info << relative_t.x(), relative_t.y(), relative_t.z(),
@@ -198,22 +200,27 @@ void relo_relative_pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 
 }
 
+//订阅当前关键帧对应的imu位姿，并发布位置轨迹
 void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 {
     //ROS_INFO("vio_callback!");
+    //？？
     Vector3d vio_t(pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.position.z);
     Quaterniond vio_q;
     vio_q.w() = pose_msg->pose.pose.orientation.w;
     vio_q.x() = pose_msg->pose.pose.orientation.x;
     vio_q.y() = pose_msg->pose.pose.orientation.y;
     vio_q.z() = pose_msg->pose.pose.orientation.z;
-
+    
+    //imu系相对于漂移的world系的位姿
     vio_t = posegraph.w_r_vio * vio_t + posegraph.w_t_vio;
     vio_q = posegraph.w_r_vio *  vio_q;
-
+    
+    //imu系相对于校正后的world系的位姿
     vio_t = posegraph.r_drift * vio_t + posegraph.t_drift;
     vio_q = posegraph.r_drift * vio_q;
-
+    
+    //camera系相对于校正后的world系的位姿
     Vector3d vio_t_cam;
     Quaterniond vio_q_cam;
     vio_t_cam = vio_t + vio_q * tic;
@@ -290,21 +297,22 @@ void extrinsic_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
                       pose_msg->pose.pose.orientation.z).toRotationMatrix();
     m_process.unlock();
 }
-
+//处理关键帧，进行回环检测
 void process()
 {
     if (!LOOP_CLOSURE)
         return;
     while (true)
     {
-        sensor_msgs::ImageConstPtr image_msg = NULL;
-        sensor_msgs::PointCloudConstPtr point_msg = NULL;
-        nav_msgs::Odometry::ConstPtr pose_msg = NULL;
+        sensor_msgs::ImageConstPtr image_msg = NULL;    ///图像信息
+        sensor_msgs::PointCloudConstPtr point_msg = NULL;   ///点云信息
+        nav_msgs::Odometry::ConstPtr pose_msg = NULL;   ///次次新关键帧位姿信息
 
         // find out the messages with same time stamp
         m_buf.lock();
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
-        {
+        {   
+            //最旧的图像之前的关键帧，点云，抛弃
             if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())
             {
                 pose_buf.pop();
@@ -318,15 +326,18 @@ void process()
             else if (image_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec() 
                 && point_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec())
             {
+                //取队列中最旧的关键帧，并清空队列
                 pose_msg = pose_buf.front();
                 pose_buf.pop();
                 while (!pose_buf.empty())
                     pose_buf.pop();
+                //取图像队列中时间戳第一个大于或等于关键帧时间戳的图像
                 while (image_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
                     image_buf.pop();
                 image_msg = image_buf.front();
                 image_buf.pop();
-
+                
+                //取点云队列中时间戳第一个大于或等于关键帧时间戳的点云
                 while (point_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
                     point_buf.pop();
                 point_msg = point_buf.front();
@@ -415,7 +426,7 @@ void process()
                                    point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
                 m_process.lock();
                 start_flag = 1;
-                posegraph.addKeyFrame(keyframe, 1);
+                posegraph.addKeyFrame(keyframe, 1); ///添加此关键帧到位姿图，并做回环检测
                 m_process.unlock();
                 frame_index++;
                 last_t = T;
