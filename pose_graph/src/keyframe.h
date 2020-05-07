@@ -77,20 +77,21 @@ public:
 	double time_stamp; 
 	int index;
 	int local_index;
-	Eigen::Vector3d vio_T_w_i; 
+	Eigen::Vector3d vio_T_w_i; ///vio窗口中imu系相对于漂移world系的位姿
 	Eigen::Matrix3d vio_R_w_i; 
-	Eigen::Vector3d T_w_i;
+	Eigen::Vector3d T_w_i;　　　///４dof回环优化后的imu系相当于world系（校正后）的位姿
 	Eigen::Matrix3d R_w_i;
-	Eigen::Vector3d origin_vio_T;		
+
+	Eigen::Vector3d origin_vio_T;	///这又是啥玩意啊	
 	Eigen::Matrix3d origin_vio_R;
 	cv::Mat image;
 	cv::Mat thumbnail;
-	vector<cv::Point3f> point_3d; 
-	vector<cv::Point2f> point_2d_uv;
-	vector<cv::Point2f> point_2d_norm;
-	vector<double> point_id;
-	vector<cv::KeyPoint> keypoints;
-	vector<cv::KeyPoint> keypoints_norm;
+	vector<cv::Point3f> point_3d; 　///３d点，
+	vector<cv::Point2f> point_2d_uv;///对应2d像素点
+	vector<cv::Point2f> point_2d_norm;///对应归一化坐标像素点，K^-1 *(u,v,1)
+	vector<double> point_id;///对应点的id
+	vector<cv::KeyPoint> keypoints;///所有的关键点
+	vector<cv::KeyPoint> keypoints_norm;///所有的归一化关键点
 	vector<cv::KeyPoint> window_keypoints;
 	vector<BRIEF::bitset> brief_descriptors;
 	vector<BRIEF::bitset> window_brief_descriptors;
