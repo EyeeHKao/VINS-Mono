@@ -9,7 +9,7 @@ ros::Publisher pub_key_poses;
 ros::Publisher pub_relo_relative_pose;
 ros::Publisher pub_camera_pose;
 ros::Publisher pub_camera_pose_visual;
-nav_msgs::Path path, relo_path;
+nav_msgs::Path path, relo_path; ///path是vio窗口中最新帧对应的imu系的轨迹，
 
 ros::Publisher pub_keyframe_pose;
 ros::Publisher pub_keyframe_point;
@@ -41,7 +41,7 @@ void registerPub(ros::NodeHandle &n)
     keyframebasevisual.setScale(0.1);
     keyframebasevisual.setLineWidth(0.01);
 }
-
+//发布最新的里程计状态，p,q,v
 void pubLatestOdometry(const Eigen::Vector3d &P, const Eigen::Quaterniond &Q, const Eigen::Vector3d &V, const std_msgs::Header &header)
 {
     Eigen::Quaterniond quadrotor_Q = Q ;
@@ -103,6 +103,7 @@ void printStatistics(const Estimator &estimator, double t)
         ROS_INFO("td %f", estimator.td);
 }
 
+//发布滑窗中最新帧对应的imu系到世界坐标系(漂移的),q,v和轨迹路径，　
 void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
 {
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
@@ -123,7 +124,7 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         odometry.twist.twist.linear.x = estimator.Vs[WINDOW_SIZE].x();
         odometry.twist.twist.linear.y = estimator.Vs[WINDOW_SIZE].y();
         odometry.twist.twist.linear.z = estimator.Vs[WINDOW_SIZE].z();
-        pub_odometry.publish(odometry);
+        pub_odometry.publish(odometry); ///发布位姿和速度，漂移的世界坐标系下
 
         geometry_msgs::PoseStamped pose_stamped;
         pose_stamped.header = header;
@@ -132,11 +133,12 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         path.header = header;
         path.header.frame_id = "world";
         path.poses.push_back(pose_stamped);
-        pub_path.publish(path);
+        pub_path.publish(path); ///发布路径，漂移的世界坐标系下
 
         Vector3d correct_t;
         Vector3d correct_v;
         Quaterniond correct_q;
+        //获取校正后的窗口中最新的位姿，
         correct_t = estimator.drift_correct_r * estimator.Ps[WINDOW_SIZE] + estimator.drift_correct_t;
         correct_q = estimator.drift_correct_r * estimator.Rs[WINDOW_SIZE];
         odometry.pose.pose.position.x = correct_t.x();
@@ -151,9 +153,9 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         relo_path.header = header;
         relo_path.header.frame_id = "world";
         relo_path.poses.push_back(pose_stamped);
-        pub_relo_path.publish(relo_path);
+        pub_relo_path.publish(relo_path);   ///发布校正后的轨迹路径
 
-        // write result to file
+        // write result to file，保存的是vio滑窗中最新位姿态，漂移的世界坐标系下的
         ofstream foutC(VINS_RESULT_PATH, ios::app);
         foutC.setf(ios::fixed, ios::floatfield);
         foutC.precision(0);
@@ -173,6 +175,7 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
     }
 }
 
+//发布滑窗中各帧对应的关键点的３d位置，即地图点位置？？？？
 void pubKeyPoses(const Estimator &estimator, const std_msgs::Header &header)
 {
     if (estimator.key_poses.size() == 0)
@@ -207,6 +210,7 @@ void pubKeyPoses(const Estimator &estimator, const std_msgs::Header &header)
     pub_key_poses.publish(key_poses);
 }
 
+//发布窗口中最新帧（？次新）对应的相机位姿
 void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
 {
     int idx2 = WINDOW_SIZE - 1;
@@ -214,6 +218,7 @@ void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
     {
         int i = idx2;
+        //从imu系转到相机系下
         Vector3d P = estimator.Ps[i] + estimator.Rs[i] * estimator.tic[0];
         Quaterniond R = Quaterniond(estimator.Rs[i] * estimator.ric[0]);
 
@@ -228,7 +233,7 @@ void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
         odometry.pose.pose.orientation.z = R.z();
         odometry.pose.pose.orientation.w = R.w();
 
-        pub_camera_pose.publish(odometry);
+        pub_camera_pose.publish(odometry);  ///发布窗口中最新的相机位姿
 
         cameraposevisual.reset();
         cameraposevisual.add_pose(P, R);
@@ -236,10 +241,10 @@ void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
     }
 }
 
-
+//发布窗口中点云和边缘化了的点云，在漂移的world系下
 void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
 {
-    sensor_msgs::PointCloud point_cloud, loop_point_cloud;
+    sensor_msgs::PointCloud point_cloud, loop_point_cloud;  ///loop_point_cloud没有使用
     point_cloud.header = header;
     loop_point_cloud.header = header;
 
@@ -248,13 +253,14 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
     {
         int used_num;
         used_num = it_per_id.feature_per_frame.size();
+        //选取满足如下条件的点：使用次数２及以上，第一次看到该点的帧在次新帧之前，且不超过窗口的3/4或求解成功
         if (!(used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
         if (it_per_id.start_frame > WINDOW_SIZE * 3.0 / 4.0 || it_per_id.solve_flag != 1)
             continue;
         int imu_i = it_per_id.start_frame;
-        Vector3d pts_i = it_per_id.feature_per_frame[0].point * it_per_id.estimated_depth;
-        Vector3d w_pts_i = estimator.Rs[imu_i] * (estimator.ric[0] * pts_i + estimator.tic[0]) + estimator.Ps[imu_i];
+        Vector3d pts_i = it_per_id.feature_per_frame[0].point * it_per_id.estimated_depth;  ///点在camear系下的坐标
+        Vector3d w_pts_i = estimator.Rs[imu_i] * (estimator.ric[0] * pts_i + estimator.tic[0]) + estimator.Ps[imu_i];  ///点在漂移的world系下的坐标
 
         geometry_msgs::Point32 p;
         p.x = w_pts_i(0);
@@ -268,7 +274,7 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
     // pub margined potin
     sensor_msgs::PointCloud margin_cloud;
     margin_cloud.header = header;
-
+    
     for (auto &it_per_id : estimator.f_manager.feature)
     { 
         int used_num;
@@ -277,7 +283,7 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
             continue;
         //if (it_per_id->start_frame > WINDOW_SIZE * 3.0 / 4.0 || it_per_id->solve_flag != 1)
         //        continue;
-
+        //边缘化的点云：窗口中最旧帧看到，且看到该点的帧数不超过２帧，且求解成功
         if (it_per_id.start_frame == 0 && it_per_id.feature_per_frame.size() <= 2 
             && it_per_id.solve_flag == 1 )
         {
@@ -292,10 +298,10 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
             margin_cloud.points.push_back(p);
         }
     }
-    pub_margin_cloud.publish(margin_cloud);
+    pub_margin_cloud.publish(margin_cloud); ///发布回环点云或者边缘化点云
 }
 
-
+//发布ros中的tf坐标变换关系，漂移的world,imu,camera
 void pubTF(const Estimator &estimator, const std_msgs::Header &header)
 {
     if( estimator.solver_flag != Estimator::SolverFlag::NON_LINEAR)
@@ -317,7 +323,7 @@ void pubTF(const Estimator &estimator, const std_msgs::Header &header)
     q.setY(correct_q.y());
     q.setZ(correct_q.z());
     transform.setRotation(q);
-    br.sendTransform(tf::StampedTransform(transform, header.stamp, "world", "body"));
+    br.sendTransform(tf::StampedTransform(transform, header.stamp, "world", "body"));   ///imu系到漂移的world系
 
     // camera frame
     transform.setOrigin(tf::Vector3(estimator.tic[0].x(),
@@ -328,7 +334,7 @@ void pubTF(const Estimator &estimator, const std_msgs::Header &header)
     q.setY(Quaterniond(estimator.ric[0]).y());
     q.setZ(Quaterniond(estimator.ric[0]).z());
     transform.setRotation(q);
-    br.sendTransform(tf::StampedTransform(transform, header.stamp, "body", "camera"));
+    br.sendTransform(tf::StampedTransform(transform, header.stamp, "body", "camera"));　///camera系和imu系的外参
 
     nav_msgs::Odometry odometry;
     odometry.header = header;
@@ -341,16 +347,18 @@ void pubTF(const Estimator &estimator, const std_msgs::Header &header)
     odometry.pose.pose.orientation.y = tmp_q.y();
     odometry.pose.pose.orientation.z = tmp_q.z();
     odometry.pose.pose.orientation.w = tmp_q.w();
-    pub_extrinsic.publish(odometry);
+    pub_extrinsic.publish(odometry);    ///发布camera-imu外参数
 
 }
 
+//发布关键帧消息，包括关键帧的2d-3d点对
 void pubKeyframe(const Estimator &estimator)
 {
     // pub camera pose, 2D-3D points of keyframe
+    //边缘化最旧帧时，说明最新的帧是关键帧，需要发布出去给位姿图顶点处理
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR && estimator.marginalization_flag == 0)
     {
-        int i = WINDOW_SIZE - 2;
+        int i = WINDOW_SIZE - 2;   ///窗口中次新帧的下标
         //Vector3d P = estimator.Ps[i] + estimator.Rs[i] * estimator.tic[0];
         Vector3d P = estimator.Ps[i];
         Quaterniond R = Quaterniond(estimator.Rs[i]);
@@ -367,7 +375,7 @@ void pubKeyframe(const Estimator &estimator)
         odometry.pose.pose.orientation.w = R.w();
         //printf("time: %f t: %f %f %f r: %f %f %f %f\n", odometry.header.stamp.toSec(), P.x(), P.y(), P.z(), R.w(), R.x(), R.y(), R.z());
 
-        pub_keyframe_pose.publish(odometry);
+        pub_keyframe_pose.publish(odometry);    ///发布的是漂移系下次新帧对应的imu的位姿
 
 
         sensor_msgs::PointCloud point_cloud;
@@ -386,10 +394,11 @@ void pubKeyframe(const Estimator &estimator)
                 p.x = w_pts_i(0);
                 p.y = w_pts_i(1);
                 p.z = w_pts_i(2);
-                point_cloud.points.push_back(p);
+                point_cloud.points.push_back(p);    ///漂移系下３d坐标
 
                 int imu_j = WINDOW_SIZE - 2 - it_per_id.start_frame;
                 sensor_msgs::ChannelFloat32 p_2d;
+                //分别是归一化坐标和像素坐标和id
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].point.x());
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].point.y());
                 p_2d.values.push_back(it_per_id.feature_per_frame[imu_j].uv.x());
@@ -402,7 +411,7 @@ void pubKeyframe(const Estimator &estimator)
         pub_keyframe_point.publish(point_cloud);
     }
 }
-
+//发布重定位帧(窗口中检测到回环的那帧)和回环帧的相对位姿，和相对yaw角，以及重定位帧在窗口中的下标
 void pubRelocalization(const Estimator &estimator)
 {
     nav_msgs::Odometry odometry;
