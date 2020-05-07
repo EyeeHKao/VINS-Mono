@@ -72,9 +72,9 @@ class Estimator
     Matrix3d ric[NUM_OF_CAM];
     Vector3d tic[NUM_OF_CAM];
 
-    //下面数组中加１都表示还要包含最新来的帧，即当前帧，
-    //那么,当前帧索引就是WINDOW_SIZE
-    //窗口中最新帧的索引就是WINDOW_SIZE-1, 次新帧索引就是WINDOW_SIZE-2
+    //下面数组中加１都表示还要包含最新来的帧，即当前帧或者说是最新帧
+    //那么,当前帧/或最新帧的索引就是WINDOW_SIZE
+    //窗口中次新帧的索引就是WINDOW_SIZE-1
     Vector3d Ps[(WINDOW_SIZE + 1)]; 　///窗口中所有帧对应imu位置＋新来的帧对应的imu的位置
     Vector3d Vs[(WINDOW_SIZE + 1)]; 　///速度
     Matrix3d Rs[(WINDOW_SIZE + 1)];　　///姿态
@@ -86,12 +86,12 @@ class Estimator
     Vector3d back_P0, last_P, last_P0;
     std_msgs::Header Headers[(WINDOW_SIZE + 1)];  ///时间戳，序号等header信息
 
-    IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
-    Vector3d acc_0, gyr_0;
+    IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)]; ///窗口中的预积分信息，假设下标为i, 那么表示i-1(上一帧，可能不在窗口中了)帧到i帧的预积分，所以总共WINDOW_SIZE+1个
+    Vector3d acc_0, gyr_0;  ///
 
-    vector<double> dt_buf[(WINDOW_SIZE + 1)];　
-    vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];
-    vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];
+    vector<double> dt_buf[(WINDOW_SIZE + 1)];　///窗口中的上一帧i-1到当前帧i的之间所有imu数据的时间间隔的数组，
+    vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];  ///窗口中的上一帧i-1到当前帧i的之间所有imu加速度数据的数组
+    vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];///窗口中的上一帧i-1到当前帧i的之间所有imu角速度数据的数组
 
     int frame_count;
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
@@ -106,7 +106,7 @@ class Estimator
 
     vector<Vector3d> point_cloud;
     vector<Vector3d> margin_cloud;
-    vector<Vector3d> key_poses;
+    vector<Vector3d> key_poses; ///
     double initial_timestamp;
 
 
