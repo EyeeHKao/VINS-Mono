@@ -27,18 +27,23 @@ std::mutex m_state; ///估计器m_estimator的状态的互斥量，
 std::mutex i_buf;   ///没用到
 std::mutex m_estimator; ///调用估计器成员函数的互斥量，主要是在处理IMU和image时
 
-double latest_time;
-Eigen::Vector3d tmp_P;
+//imu向前传播时的临时存储状态
+double latest_time; ///最新的imu时间戳
+Eigen::Vector3d tmp_P;  
 Eigen::Quaterniond tmp_Q;
 Eigen::Vector3d tmp_V;
 Eigen::Vector3d tmp_Ba;
 Eigen::Vector3d tmp_Bg;
-Eigen::Vector3d acc_0;
+
+//上一时刻的imu测量值
+Eigen::Vector3d acc_0;  
 Eigen::Vector3d gyr_0;
+
 bool init_feature = 0;
 bool init_imu = 1;
 double last_imu_t = 0;
 
+//imu预测，根据tmp_Q/V/Ba/Bg向前传播，结果仍保存在这些变量中
 void predict(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     double t = imu_msg->header.stamp.toSec();
@@ -61,6 +66,7 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     double rz = imu_msg->angular_velocity.z;
     Eigen::Vector3d angular_velocity{rx, ry, rz};
 
+    //中点积分，非欧拉积分
     Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba) - estimator.g;
 
     Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;
@@ -77,6 +83,7 @@ void predict(const sensor_msgs::ImuConstPtr &imu_msg)
     gyr_0 = angular_velocity;
 }
 
+//根据窗口中最新的估计的状态（处理完图像后，imu_buf里又会产生一些imu测量值），向前传播imu预测值
 void update()
 {
     TicToc t_predict;
@@ -230,7 +237,6 @@ void process()
         //解锁
         lk.unlock();
         //下面进入估计位姿过程，需要使用Estimator的相关成员函数，所以先上锁锁住，防止其他线程也调用了Estimator的相关成员函数：
-        //个人认为：这个锁的范围可以缩小，只在调用的时候锁着就可以
         m_estimator.lock();
         for (auto &measurement : measurements)
         {
@@ -257,8 +263,7 @@ void process()
                     rx = imu_msg->angular_velocity.x;
                     ry = imu_msg->angular_velocity.y;
                     rz = imu_msg->angular_velocity.z;
-                    //比如在这里上锁和解锁
-                    //计算IMU预计分值
+                    //计算IMU预计分值，并向前传播imu测量量，
                     estimator.processIMU(dt, Vector3d(dx, dy, dz), Vector3d(rx, ry, rz));
                     //printf("imu: dt:%f a: %f %f %f w: %f %f %f\n",dt, dx, dy, dz, rx, ry, rz);
 
@@ -288,9 +293,9 @@ void process()
             }
             // set relocalization frame
             sensor_msgs::PointCloudConstPtr relo_msg = NULL;
-            //在处理下一帧image前，检测重定位帧（回环）消息缓存队列：注意是指与当前最新帧相匹配的那一帧
-            //注意：回环帧的数据存储方式和图像特征点帧(feature_track发布出来的)不同：
-            //最开始时，这个队列为空的，
+            //在处理下一帧image前，检测重定位帧（回环）消息缓存队列：重定位帧是指与过去关键帧发生了回环的窗口中的某一帧
+            //注意：重定位帧的数据存储方式和图像特征点帧(feature_track发布出来的)不同：
+            //取最新的重定位帧并清空缓存队列
             while (!relo_buf.empty())
             {
                 relo_msg = relo_buf.front();
@@ -299,7 +304,7 @@ void process()
             if (relo_msg != NULL)
             {
                 vector<Vector3d> match_points;
-                //重定位帧（回环帧）的时间戳
+                //重定位帧的时间戳
                 double frame_stamp = relo_msg->header.stamp.toSec();
                 for (unsigned int i = 0; i < relo_msg->points.size(); i++)
                 {
@@ -311,14 +316,14 @@ void process()
                     //将回环帧中的特征点的相机归一化坐标和ID放入匹配点集中
                     match_points.push_back(u_v_id);
                 }
-                //回环帧的位姿：这个域下分别代表了该帧的位置和姿态四元数：
+                //重定位帧的位姿（回环检测四自由度优化计算出的）：这个域下分别代表了该帧的位置和姿态四元数：
                 Vector3d relo_t(relo_msg->channels[0].values[0], relo_msg->channels[0].values[1], relo_msg->channels[0].values[2]);
                 Quaterniond relo_q(relo_msg->channels[0].values[3], relo_msg->channels[0].values[4], relo_msg->channels[0].values[5], relo_msg->channels[0].values[6]);
                 Matrix3d relo_r = relo_q.toRotationMatrix();
                 int frame_index;
-                //回环帧的帧号
+                //重定位帧的帧号
                 frame_index = relo_msg->channels[0].values[7];
-                //送入estimator处理这个回环产生的边
+                //设置重定位帧的相关信息：位姿，匹配点信息
                 estimator.setReloFrame(frame_stamp, frame_index, match_points, relo_t, relo_r);
             }
             //开始处理这帧图像数据了：
@@ -358,8 +363,8 @@ void process()
             printStatistics(estimator, whole_t);
             std_msgs::Header header = img_msg->header;
             header.frame_id = "world";
-            //发布消息：
-            pubOdometry(estimator, header);
+            //发布消息： 
+            pubOdometry(estimator, header); ///
             pubKeyPoses(estimator, header);
             pubCameraPose(estimator, header);
             pubPointCloud(estimator, header);
@@ -372,14 +377,15 @@ void process()
         //到这里才解锁啊：主要是方便省事，不然上面那个循环里面要不停的加锁上锁：但这会不会导致一些问题，
         //因为每次都是处理好几组IMUS-image数据对，有时组数多，有时组数少，组数多的时候可能处理的比较慢，这样就会影响锁住的时间长短，导致好几组过后才输出，这个要在平台上实测
         m_estimator.unlock();
-        //缓冲区再次锁住：为何？？？
+        //缓冲区再次锁住，取此时imu_buf
         m_buf.lock();
         //估计器状态上锁，因为要判断是在初始化还是在非线性优化：
         m_state.lock();
         //初始化状态，说明还没完成初始化，不能更新：
         if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
-            //更新状态，将最新的也即窗口中最后一帧的估计出的位姿，速度，IMU随机游走偏差等，更新到全局变量中：
-            update();
+            //更新至最新状态，将最新的也即窗口中最后一帧的估计出的位姿，速度，IMU随机游走偏差等，通过最新缓存的imu数据更新到全局变量中tmp_P/Q...：
+            //可见，这里在时间上没有均匀的以imu的频率间更新状态（或者说没有及时处理imu数据，而是缓存一部分后批量处理，不实时）
+            update();   
         m_state.unlock();
         m_buf.unlock();
     }
