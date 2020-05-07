@@ -9,7 +9,7 @@ ros::Publisher pub_key_poses;
 ros::Publisher pub_relo_relative_pose;
 ros::Publisher pub_camera_pose;
 ros::Publisher pub_camera_pose_visual;
-nav_msgs::Path path, relo_path; ///path是vio窗口中最新帧对应的imu系的轨迹，
+nav_msgs::Path path, relo_path; ///path是vio窗口中最新帧对应的imu系的轨迹，relo_path是校正后的最新帧对应的imu系的轨迹
 
 ros::Publisher pub_keyframe_pose;
 ros::Publisher pub_keyframe_point;
@@ -103,7 +103,7 @@ void printStatistics(const Estimator &estimator, double t)
         ROS_INFO("td %f", estimator.td);
 }
 
-//发布滑窗中最新帧对应的imu系到世界坐标系(漂移的),q,v和轨迹路径，　
+//发布滑窗中最新帧对应的imu系到世界坐标系(漂移的),q,v和轨迹路径，以及校正后的最新帧的轨迹
 void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
 {
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
@@ -175,7 +175,7 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
     }
 }
 
-//发布滑窗中各帧对应的关键点的３d位置，即地图点位置？？？？
+//发布滑窗中各帧对应的imu系的位置
 void pubKeyPoses(const Estimator &estimator, const std_msgs::Header &header)
 {
     if (estimator.key_poses.size() == 0)
@@ -210,10 +210,11 @@ void pubKeyPoses(const Estimator &estimator, const std_msgs::Header &header)
     pub_key_poses.publish(key_poses);
 }
 
-//发布窗口中最新帧（？次新）对应的相机位姿
+//发布窗口中最新帧对应的相机位姿
+//注意发布时已经滑动滑动窗口了，所以WINDOW_SIZE-1和WIDOW_SIZE此时的信息是一样的
 void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
 {
-    int idx2 = WINDOW_SIZE - 1;
+    int idx2 = WINDOW_SIZE - 1; ///这时次新帧和最新帧一样
 
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
     {
@@ -253,7 +254,7 @@ void pubPointCloud(const Estimator &estimator, const std_msgs::Header &header)
     {
         int used_num;
         used_num = it_per_id.feature_per_frame.size();
-        //选取满足如下条件的点：使用次数２及以上，第一次看到该点的帧在次新帧之前，且不超过窗口的3/4或求解成功
+        //选取满足如下条件的点：使用次数２及以上，第一次看到该点的帧在次次新帧之前，且不超过窗口的3/4或求解成功
         if (!(used_num >= 2 && it_per_id.start_frame < WINDOW_SIZE - 2))
             continue;
         if (it_per_id.start_frame > WINDOW_SIZE * 3.0 / 4.0 || it_per_id.solve_flag != 1)
@@ -351,14 +352,14 @@ void pubTF(const Estimator &estimator, const std_msgs::Header &header)
 
 }
 
-//发布关键帧消息，包括关键帧的2d-3d点对
+//当前帧是关键帧时，发布次次关键帧消息，包括关键帧的2d-3d点对
 void pubKeyframe(const Estimator &estimator)
 {
     // pub camera pose, 2D-3D points of keyframe
-    //边缘化最旧帧时，说明最新的帧是关键帧，需要发布出去给位姿图顶点处理
+    //边缘化最旧帧时，说明当前帧是关键帧，需要发布出去给位姿图顶点处理
     if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR && estimator.marginalization_flag == 0)
     {
-        int i = WINDOW_SIZE - 2;   ///窗口中次新帧的下标
+        int i = WINDOW_SIZE - 2;   ///窗口中次次新帧的下标，相当于上一次的次新帧，因为已经边缘化了最旧帧
         //Vector3d P = estimator.Ps[i] + estimator.Rs[i] * estimator.tic[0];
         Vector3d P = estimator.Ps[i];
         Quaterniond R = Quaterniond(estimator.Rs[i]);
@@ -375,7 +376,7 @@ void pubKeyframe(const Estimator &estimator)
         odometry.pose.pose.orientation.w = R.w();
         //printf("time: %f t: %f %f %f r: %f %f %f %f\n", odometry.header.stamp.toSec(), P.x(), P.y(), P.z(), R.w(), R.x(), R.y(), R.z());
 
-        pub_keyframe_pose.publish(odometry);    ///发布的是漂移系下次新帧对应的imu的位姿
+        pub_keyframe_pose.publish(odometry);    ///发布的是漂移系下次次新帧对应的imu的位姿
 
 
         sensor_msgs::PointCloud point_cloud;
