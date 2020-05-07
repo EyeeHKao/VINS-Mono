@@ -56,10 +56,11 @@ class Estimator
         NON_LINEAR
     };
 
+    
     enum MarginalizationFlag
     {
-        MARGIN_OLD = 0,
-        MARGIN_SECOND_NEW = 1
+        MARGIN_OLD = 0,　　　　///为０表示边缘化窗口中最旧帧（当新来的帧为关键帧时）
+        MARGIN_SECOND_NEW = 1 ///为１表示边缘化窗口的次新帧（当新来的帧不是关键帧时）
     };
 
     SolverFlag solver_flag;
@@ -71,21 +72,24 @@ class Estimator
     Matrix3d ric[NUM_OF_CAM];
     Vector3d tic[NUM_OF_CAM];
 
-    Vector3d Ps[(WINDOW_SIZE + 1)];
-    Vector3d Vs[(WINDOW_SIZE + 1)];
-    Matrix3d Rs[(WINDOW_SIZE + 1)];
-    Vector3d Bas[(WINDOW_SIZE + 1)];
-    Vector3d Bgs[(WINDOW_SIZE + 1)];
-    double td;
+    //下面数组中加１都表示还要包含最新来的帧，即当前帧，
+    //那么,当前帧索引就是WINDOW_SIZE
+    //窗口中最新帧的索引就是WINDOW_SIZE-1, 次新帧索引就是WINDOW_SIZE-2
+    Vector3d Ps[(WINDOW_SIZE + 1)]; 　///窗口中所有帧对应imu位置＋新来的帧对应的imu的位置
+    Vector3d Vs[(WINDOW_SIZE + 1)]; 　///速度
+    Matrix3d Rs[(WINDOW_SIZE + 1)];　　///姿态
+    Vector3d Bas[(WINDOW_SIZE + 1)];  ///加速度偏差
+    Vector3d Bgs[(WINDOW_SIZE + 1)];　///陀螺仪偏差
+    double td;  ///imu数据和image数据的时间延迟
 
     Matrix3d back_R0, last_R, last_R0;
     Vector3d back_P0, last_P, last_P0;
-    std_msgs::Header Headers[(WINDOW_SIZE + 1)];
+    std_msgs::Header Headers[(WINDOW_SIZE + 1)];  ///时间戳，序号等header信息
 
     IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
     Vector3d acc_0, gyr_0;
 
-    vector<double> dt_buf[(WINDOW_SIZE + 1)];
+    vector<double> dt_buf[(WINDOW_SIZE + 1)];　
     vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];
 
@@ -106,11 +110,11 @@ class Estimator
     double initial_timestamp;
 
 
-    double para_Pose[WINDOW_SIZE + 1][SIZE_POSE];
-    double para_SpeedBias[WINDOW_SIZE + 1][SIZE_SPEEDBIAS];
-    double para_Feature[NUM_OF_F][SIZE_FEATURE];
-    double para_Ex_Pose[NUM_OF_CAM][SIZE_POSE];
-    double para_Retrive_Pose[SIZE_POSE];
+    double para_Pose[WINDOW_SIZE + 1][SIZE_POSE]; ///位置姿态放一起，
+    double para_SpeedBias[WINDOW_SIZE + 1][SIZE_SPEEDBIAS]; ///速度偏差放一起
+    double para_Feature[NUM_OF_F][SIZE_FEATURE];  ///
+    double para_Ex_Pose[NUM_OF_CAM][SIZE_POSE]; ///相机外参，多个相机多个外参
+    double para_Retrive_Pose[SIZE_POSE];  ///恢复的位姿
     double para_Td[1][1];
     double para_Tr[1][1];
 
@@ -124,16 +128,16 @@ class Estimator
 
     //relocalization variable
     bool relocalization_info;
-    double relo_frame_stamp;
-    double relo_frame_index;
-    int relo_frame_local_index;
-    vector<Vector3d> match_points;
-    double relo_Pose[SIZE_POSE];
-    Matrix3d drift_correct_r;
-    Vector3d drift_correct_t;
-    Vector3d prev_relo_t;
+    double relo_frame_stamp;  ///窗口中重定位帧的时间戳
+    double relo_frame_index;  ///重定位帧在窗口中的索引
+    int relo_frame_local_index;　///?
+    vector<Vector3d> match_points;  ///重定位帧对应的匹配上的3d点
+    double relo_Pose[SIZE_POSE];  ///重定位帧的位姿（回环ba优化后的）
+    Matrix3d drift_correct_r; ///漂移world系到校正的world系的姿态
+    Vector3d drift_correct_t;　///.....平移
+    Vector3d prev_relo_t;　///回环帧在漂移系下的位移和姿态
     Matrix3d prev_relo_r;
-    Vector3d relo_relative_t;
+    Vector3d relo_relative_t; ///重定位帧和回环帧的相对位姿和相对yaw角
     Quaterniond relo_relative_q;
     double relo_relative_yaw;
 };
