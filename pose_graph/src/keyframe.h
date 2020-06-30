@@ -90,9 +90,9 @@ public:
 	vector<cv::Point2f> point_2d_uv;///对应2d像素点
 	vector<cv::Point2f> point_2d_norm;///对应归一化坐标像素点，K^-1 *(u,v,1)
 	vector<double> point_id;///对应点的id
-	vector<cv::KeyPoint> keypoints;///所有的关键点
+	vector<cv::KeyPoint> keypoints;///所有的关键点,用于暴力匹配和词袋检索
 	vector<cv::KeyPoint> keypoints_norm;///所有的归一化关键点
-	vector<cv::KeyPoint> window_keypoints;
+	vector<cv::KeyPoint> window_keypoints;///追踪线程传来的特征,有相应3d点对应
 	vector<BRIEF::bitset> brief_descriptors;
 	vector<BRIEF::bitset> window_brief_descriptors;
 	bool has_fast_point;
